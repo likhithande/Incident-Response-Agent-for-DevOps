@@ -1,0 +1,384 @@
+[
+  {
+    "incident_id": "INC-001",
+    "service": "Payment API",
+    "severity": "CRITICAL",
+    "timestamp": "2026-08-15T14:22:00Z",
+    "symptoms": [
+      "HTTP 503 Service Unavailable",
+      "High P99 latency (>4500ms)",
+      "Database connection timeouts on checkout endpoints"
+    ],
+    "error_logs": [
+      "Timeout waiting for database connection from pool",
+      "Connection pool exhausted (active=50, max=50)",
+      "HikariPool-1 - Connection is not available, request timed out after 30005ms"
+    ],
+    "root_cause": "Database connection pool exhaustion during a sudden flash-sale traffic spike due to default max_connections=50.",
+    "investigation_steps": [
+      "Inspect active database connection count vs max pool size",
+      "Check RDS/Postgres CPU and IOPS utilization to ensure DB itself is healthy",
+      "Review checkout API traffic surge metrics (RPS jumped from 120 to 850 RPS)",
+      "Verify connection leak by monitoring idle-in-transaction connection holding times"
+    ],
+    "resolution_steps": [
+      "Increase database connection pool capacity from 50 to 150 in Payment API configuration",
+      "Deploy hotfix configuration change and trigger rolling restart of Payment API pods",
+      "Monitor 5xx error rate and pool saturation in Datadog"
+    ],
+    "runbook": [
+      "1. Query pg_stat_activity to count open connections per client IP",
+      "2. Check Payment API /metrics endpoint for hikaricp_pending_threads",
+      "3. If pending > 0 and DB CPU < 40%, scale pool size via Helm values",
+      "4. Execute rolling restart with zero-downtime",
+      "5. Verify 503 errors drop below 0.01% within 2 minutes"
+    ],
+    "lessons_learned": [
+      "Traffic spikes can exhaust the configured connection pool before the database server reaches compute limits",
+      "Connection pool size must auto-scale or be dimensioned for 3x peak burst",
+      "Need circuit breaker on checkout service to degrade gracefully instead of hanging threads"
+    ],
+    "status": "RESOLVED"
+  },
+  {
+    "incident_id": "INC-002",
+    "service": "Session Cache Service",
+    "severity": "HIGH",
+    "timestamp": "2026-08-18T09:15:00Z",
+    "symptoms": [
+      "Session lookup latency spikes",
+      "Cache write failures with OOM command not allowed",
+      "Users unexpectedly logged out across multiple regions"
+    ],
+    "error_logs": [
+      "OOM command not allowed when used memory > 'maxmemory'",
+      "Redis write failed: command rejected due to memory limits (used_memory=16.1GB, maxmemory=16.0GB)"
+    ],
+    "root_cause": "Key TTLs were accidentally omitted on new user preference payloads, filling the 16GB Redis cluster without an eviction policy set to volatile-lru.",
+    "investigation_steps": [
+      "Check redis-cli INFO memory used_memory_human vs maxmemory",
+      "Inspect eviction policy config: maxmemory-policy",
+      "Run redis-cli --bigkeys to identify runaway key patterns without TTL"
+    ],
+    "resolution_steps": [
+      "Switch eviction policy to allkeys-lru dynamically via CONFIG SET maxmemory-policy allkeys-lru",
+      "Run purge script on expired session prefixes",
+      "Patch preferences service to strictly enforce 24h TTL"
+    ],
+    "runbook": [
+      "1. Verify memory: redis-cli info memory",
+      "2. Set policy: CONFIG SET maxmemory-policy allkeys-lru",
+      "3. Check eviction rate: redis-cli info stats | grep evicted_keys",
+      "4. Deploy TTL fix commit to preferences microservice"
+    ],
+    "lessons_learned": [
+      "All keys written to shared Redis clusters must have an explicit TTL",
+      "Eviction policy must never be noeviction on ephemeral session caches"
+    ],
+    "status": "RESOLVED"
+  },
+  {
+    "incident_id": "INC-003",
+    "service": "Order Processing Worker",
+    "severity": "HIGH",
+    "timestamp": "2026-08-22T11:40:00Z",
+    "symptoms": [
+      "Orders stuck in PENDING queue",
+      "Worker pods failing to start",
+      "Kubelet reporting CrashLoopBackOff"
+    ],
+    "error_logs": [
+      "Back-off 5m0s restarting failed container: order-worker",
+      "Error: failed to parse YAML config: mapping values are not allowed here at line 42",
+      "Fatal error during startup: invalid configuration file syntax"
+    ],
+    "root_cause": "A malformed ConfigMap containing a tab character in YAML indentation was merged during the staging deployment.",
+    "investigation_steps": [
+      "kubectl describe pod order-worker-7d9b4c-kx82z",
+      "kubectl logs order-worker-7d9b4c-kx82z --previous",
+      "kubectl get configmap order-worker-config -o yaml | yamllint -"
+    ],
+    "resolution_steps": [
+      "Correct indentation in order-worker-config ConfigMap",
+      "Re-apply ConfigMap via kubectl apply",
+      "Restart deployment order-worker with kubectl rollout restart"
+    ],
+    "runbook": [
+      "1. Inspect pod events: kubectl describe pod -l app=order-worker",
+      "2. Check previous container exit code and logs",
+      "3. Validate ConfigMap syntax with linter",
+      "4. Roll back helm release or patch ConfigMap",
+      "5. Verify worker pods transition to Running state"
+    ],
+    "lessons_learned": [
+      "CI/CD pipeline must enforce strict yamllint and dry-run validation on all Kubernetes manifests prior to rollout",
+      "Never edit ConfigMaps directly in production without pipeline validation"
+    ],
+    "status": "RESOLVED"
+  },
+  {
+    "incident_id": "INC-004",
+    "service": "Kong API Gateway",
+    "severity": "CRITICAL",
+    "timestamp": "2026-08-25T16:05:00Z",
+    "symptoms": [
+      "API Gateway returning 502 Bad Gateway to 100% of external traffic",
+      "Upstream services report healthy but unreachable through gateway"
+    ],
+    "error_logs": [
+      "[error] 142#0: *12049 name resolution failed for upstream service 'billing.internal': server failure (2: SERVFAIL)",
+      "502 Bad Gateway while connecting to upstream billing.internal:8080"
+    ],
+    "root_cause": "CoreDNS pods crashed due to memory exhaustion during a cluster node migration, leaving internal service discovery non-functional.",
+    "investigation_steps": [
+      "Check Gateway error logs for upstream resolution errors",
+      "Verify CoreDNS pod status with kubectl get pods -n kube-system -l k8s-app=kube-dns",
+      "Test DNS lookup from within a debug pod using nslookup billing.internal"
+    ],
+    "resolution_steps": [
+      "Scale CoreDNS deployment to 4 replicas and increase memory limit to 256Mi",
+      "Restart Gateway worker processes to clear stale DNS resolver cache",
+      "Verify DNS resolution and monitor 502 error clearance"
+    ],
+    "runbook": [
+      "1. Check DNS pods: kubectl -n kube-system get pods -l k8s-app=kube-dns",
+      "2. Inspect CoreDNS memory: kubectl -n kube-system top pods",
+      "3. If OOMKilled, patch memory request/limit to 256Mi",
+      "4. Flush Gateway resolver cache: nginx -s reload or pod restart",
+      "5. Verify HTTP 200 responses on external gateway ping endpoint"
+    ],
+    "lessons_learned": [
+      "CoreDNS is a single-point-of-failure for internal routing and must have node anti-affinity and adequate memory headroom",
+      "Gateway should cache DNS resolutions with resilient fallback TTL"
+    ],
+    "status": "RESOLVED"
+  },
+  {
+    "incident_id": "INC-005",
+    "service": "Authentication Service",
+    "severity": "HIGH",
+    "timestamp": "2026-08-29T18:30:00Z",
+    "symptoms": [
+      "CPU utilization at 98% across all auth nodes",
+      "Auth response latency exceeding 3000ms",
+      "Downstream services timing out on token validation"
+    ],
+    "error_logs": [
+      "Thread starvation detected: 64 worker threads waiting on lock for RSA key cache",
+      "Slow request warning: Token validation took 4120ms"
+    ],
+    "root_cause": "Synchronized block around RSA public key decoding caused global thread contention under 500+ concurrent requests.",
+    "investigation_steps": [
+      "Collect Java thread dump using jstack <pid>",
+      "Inspect top thread states: 48 threads BLOCKED on java.security.spec.X509EncodedKeySpec",
+      "Review recent git commits to AuthTokenValidator.java"
+    ],
+    "resolution_steps": [
+      "Replace synchronized key parsing block with pre-computed ConcurrentHashMap cache of PublicKey instances",
+      "Deploy hotfix release v2.4.1",
+      "Verify CPU utilization drops back below 25%"
+    ],
+    "runbook": [
+      "1. Capture thread dump: jcmd <pid> Thread.dump_to_file /tmp/threads.tdump",
+      "2. Analyze lock contention with thread analyzer or grep for BLOCKED",
+      "3. Scale auth deployment temporarily to absorb traffic",
+      "4. Deploy non-blocking key cache patch",
+      "5. Monitor CPU and P95 latency"
+    ],
+    "lessons_learned": [
+      "Cryptographic key parsing is CPU intensive and should be parsed once on boot, never per request",
+      "Load test cryptographic verification paths under high concurrency"
+    ],
+    "status": "RESOLVED"
+  },
+  {
+    "incident_id": "INC-006",
+    "service": "Search & Indexing Engine",
+    "severity": "MEDIUM",
+    "timestamp": "2026-09-02T08:10:00Z",
+    "symptoms": [
+      "Search queries failing with disk I/O errors",
+      "Elasticsearch nodes dropping into READ_ONLY mode",
+      "Node disk utilization reached 100%"
+    ],
+    "error_logs": [
+      "java.io.IOException: No space left on device",
+      "cluster_block_exception: index read-only / allow delete block active"
+    ],
+    "root_cause": "Logrotate daemon failed due to permissions error, allowing debug log files to balloon to 180GB.",
+    "investigation_steps": [
+      "Check disk usage: df -h",
+      "Find largest files: find /var/log -type f -size +1G",
+      "Check logrotate systemd service status: systemctl status logrotate"
+    ],
+    "resolution_steps": [
+      "Truncate unrotated .log files: > /var/log/elasticsearch/debug.log",
+      "Fix file permissions in /etc/logrotate.d/elasticsearch",
+      "Remove cluster read-only block: curl -X PUT 'localhost:9200/_all/_settings' -H 'Content-Type: application/json' -d '{\"index.blocks.read_only_allow_delete\": null}'"
+    ],
+    "runbook": [
+      "1. Run df -h /var/log to verify saturation",
+      "2. Safely truncate largest log file without restarting process",
+      "3. Clear Elasticsearch floodstage block via REST API",
+      "4. Test logrotate with logrotate -f /etc/logrotate.d/elasticsearch",
+      "5. Set up alert at 80% disk threshold"
+    ],
+    "lessons_learned": [
+      "Log rotation must be actively monitored with alerting on logrotate failure",
+      "Disk watermarks must trigger alert at 80% well before 95% floodstage"
+    ],
+    "status": "RESOLVED"
+  },
+  {
+    "incident_id": "INC-007",
+    "service": "Customer Identity Portal",
+    "severity": "HIGH",
+    "timestamp": "2026-09-07T13:45:00Z",
+    "symptoms": [
+      "Users unable to sign in with Google/GitHub SSO",
+      "HTTP 429 Too Many Requests returned from OAuth callback",
+      "Login success rate dropped to 12%"
+    ],
+    "error_logs": [
+      "OAuth provider returned 429: Rate limit exceeded for client_id",
+      "Failed token exchange: rate limit reset in 320 seconds"
+    ],
+    "root_cause": "A frontend retry loop on network glitch caused 50,000 rapid token exchange requests, blowing the OAuth quota.",
+    "investigation_steps": [
+      "Inspect outbound HTTP traffic metrics to oauth provider endpoints",
+      "Review frontend client telemetry for retry loops on button click",
+      "Verify provider quota dashboard"
+    ],
+    "resolution_steps": [
+      "Disable aggressive frontend retry and implement exponential backoff with jitter",
+      "Implement backend token exchange rate limiter and cache validated tokens",
+      "Request temporary quota increase from OAuth provider"
+    ],
+    "runbook": [
+      "1. Verify 429 errors in identity proxy logs",
+      "2. Check frontend client version distribution for retry bug",
+      "3. Enable IP rate-limiting at Cloudflare edge to throttle rapid retries",
+      "4. Deploy frontend patch with disabled auto-retry",
+      "5. Monitor successful logins"
+    ],
+    "lessons_learned": [
+      "Frontend network retry logic must always use exponential backoff and never retry on 4xx status codes",
+      "OAuth token exchanges should be queued or debounced per user"
+    ],
+    "status": "RESOLVED"
+  },
+  {
+    "incident_id": "INC-008",
+    "service": "Notification Delivery Service",
+    "severity": "HIGH",
+    "timestamp": "2026-09-12T19:20:00Z",
+    "symptoms": [
+      "Notification delivery delayed by >45 minutes",
+      "Kafka consumer lag exceeding 1.2M messages",
+      "Consumer group repeatedly dropping members"
+    ],
+    "error_logs": [
+      "CommitFailedException: Commit cannot be completed since the group has already rebalanced",
+      "Heartbeat failed for group notification-workers: member timed out after max.poll.interval.ms"
+    ],
+    "root_cause": "A batch email template rendering job took 6 minutes, exceeding max.poll.interval.ms (5 minutes), triggering continuous consumer group rebalances.",
+    "investigation_steps": [
+      "Check kafka-consumer-groups --describe --group notification-workers",
+      "Inspect consumer logs for CommitFailedException and rebalance events",
+      "Profile email rendering duration in APM traces"
+    ],
+    "resolution_steps": [
+      "Increase max.poll.interval.ms from 300,000ms to 900,000ms",
+      "Reduce max.poll.records from 500 to 50",
+      "Offload heavy HTML email rendering to an asynchronous threadpool"
+    ],
+    "runbook": [
+      "1. Inspect consumer lag: kafka-consumer-groups.sh --bootstrap-server kafka:9092 --describe --group notification-workers",
+      "2. Check average batch processing time in Datadog",
+      "3. Update consumer config: max.poll.records=50, max.poll.interval.ms=900000",
+      "4. Restart consumer service instances gracefully",
+      "5. Verify lag steadily decreases to zero"
+    ],
+    "lessons_learned": [
+      "Long-running message processing must never block the Kafka consumer polling thread",
+      "Keep max.poll.records low when processing times are variable"
+    ],
+    "status": "RESOLVED"
+  },
+  {
+    "incident_id": "INC-009",
+    "service": "Billing & Invoice Service",
+    "severity": "CRITICAL",
+    "timestamp": "2026-09-16T15:10:00Z",
+    "symptoms": [
+      "Invoice generation throwing HTTP 500 Internal Server Error",
+      "Customers unable to view invoices or download receipts",
+      "Error rate jumped to 45% immediately following deployment v3.8.0"
+    ],
+    "error_logs": [
+      "ProgrammingError: column invoices.tax_breakdown does not exist",
+      "SQLAlchemy OperationalError: (psycopg2.errors.UndefinedColumn) column \"tax_breakdown\" does not exist"
+    ],
+    "root_cause": "The v3.8.0 application deployment was promoted to production before the corresponding Alembic database migration had executed.",
+    "investigation_steps": [
+      "Review deployment pipeline logs for 'alembic upgrade head' step",
+      "Query alembic_version table in PostgreSQL",
+      "Compare Git release tag v3.8.0 migration scripts with DB schema"
+    ],
+    "resolution_steps": [
+      "Run pending database migration: alembic upgrade head",
+      "Verify column tax_breakdown exists on invoices table",
+      "Confirm 500 error rate drops to 0%"
+    ],
+    "runbook": [
+      "1. Inspect Sentry/logs for database schema errors",
+      "2. Check current migration revision: alembic current",
+      "3. Run migration in staging first, then apply to production: alembic upgrade head",
+      "4. Verify schema with \\d+ invoices in psql",
+      "5. Test invoice creation endpoint with health test curl"
+    ],
+    "lessons_learned": [
+      "Database migrations must be decoupled and executed in an automated pre-deploy Kubernetes Job before app pods are updated",
+      "Deployments must fail fast if pending schema migrations are unapplied"
+    ],
+    "status": "RESOLVED"
+  },
+  {
+    "incident_id": "INC-010",
+    "service": "Catalog & Inventory Service",
+    "severity": "HIGH",
+    "timestamp": "2026-09-20T10:05:00Z",
+    "symptoms": [
+      "Item deletion API timing out after 60s",
+      "Postgres lock manager experiencing high lock waits",
+      "Catalog updates hanging"
+    ],
+    "error_logs": [
+      "Canceling statement due to statement timeout (60000ms)",
+      "Lock wait timeout exceeded while executing DELETE FROM categories WHERE id = $1"
+    ],
+    "root_cause": "The foreign key column product_items.category_id lacked an index, causing PostgreSQL to execute a full sequential table scan of 12M rows during cascading delete locks.",
+    "investigation_steps": [
+      "Check pg_stat_activity for blocked queries and waiting PID",
+      "Run EXPLAIN ANALYZE on SELECT * FROM product_items WHERE category_id = 4501",
+      "Inspect pg_locks to identify exclusive table lock contention"
+    ],
+    "resolution_steps": [
+      "Execute CREATE INDEX CONCURRENTLY idx_product_items_category_id ON product_items(category_id)",
+      "Cancel long-running stuck backend queries: SELECT pg_cancel_backend(pid)",
+      "Verify item deletion completes in under 40ms"
+    ],
+    "runbook": [
+      "1. Query stuck locks: SELECT pid, query, state, age(clock_timestamp(), query_start) FROM pg_stat_activity WHERE state != 'idle'",
+      "2. Terminate blocking backend PID if safe",
+      "3. Create missing index CONCURRENTLY to avoid locking production table",
+      "4. Verify index status in pg_stat_user_indexes",
+      "5. Test deletion endpoint response time"
+    ],
+    "lessons_learned": [
+      "Always create explicit indexes on all foreign key columns referenced in ON DELETE CASCADE relations",
+      "Enable query performance insights and statement timeout alerts"
+    ],
+    "status": "RESOLVED"
+  }
+]

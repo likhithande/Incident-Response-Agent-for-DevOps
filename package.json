@@ -1,0 +1,23 @@
+{
+  "name": "ops-memory",
+  "version": "1.0.0",
+  "description": "OpsMemory: AI Incident Response Agent with Hindsight Persistent Memory",
+  "private": true,
+  "scripts": {
+    "start": "python run.py",
+    "build": "npm run build --prefix frontend",
+    "dev": "python run.py --dev",
+    "backend": "python -m uvicorn app.main:app --app-dir backend --port 8000 --reload",
+    "test": "pytest backend"
+  },
+  "keywords": [
+    "incident-response",
+    "hindsight",
+    "fastapi",
+    "react",
+    "groq",
+    "ai-agent"
+  ],
+  "author": "",
+  "license": "MIT"
+}

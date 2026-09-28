@@ -1,0 +1,194 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #06090F;
+}
+
+body {
+  background-color: #06090F;
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(30, 58, 138, 0.18) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(109, 40, 217, 0.16) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(15, 23, 42, 0.45) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(6, 182, 212, 0.03) 0px, transparent 65%);
+  background-attachment: fixed;
+  color: #E2E8F0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Cybernetic Scrollbars */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(8, 12, 22, 0.6);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #3B82F6 0%, #8B5CF6 100%);
+  border-radius: 4px;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #60A5FA 0%, #A78BFA 100%);
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.8);
+}
+
+/* Global scrollbar fallback */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(11, 15, 23, 0.7);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6366F1;
+}
+
+/* Glassmorphism & border glows */
+.glass-panel {
+  background: linear-gradient(180deg, rgba(16, 22, 38, 0.88) 0%, rgba(10, 14, 25, 0.95) 100%);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card {
+  background: linear-gradient(180deg, rgba(20, 28, 48, 0.75) 0%, rgba(12, 17, 30, 0.9) 100%);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.glow-blue {
+  box-shadow: 0 0 25px -4px rgba(59, 130, 246, 0.35);
+  border-color: rgba(59, 130, 246, 0.6);
+}
+
+.glow-purple {
+  box-shadow: 0 0 25px -4px rgba(139, 92, 246, 0.35);
+  border-color: rgba(139, 92, 246, 0.6);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 25px -4px rgba(16, 185, 129, 0.35);
+  border-color: rgba(16, 185, 129, 0.6);
+}
+
+.glow-rose {
+  box-shadow: 0 0 25px -4px rgba(239, 68, 68, 0.35);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 25px -4px rgba(6, 182, 212, 0.35);
+  border-color: rgba(6, 182, 212, 0.6);
+}
+
+/* Radar pulse animation for active incident */
+@keyframes radarPing {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.radar-ping {
+  animation: radarPing 2s infinite;
+}
+
+/* Audio equalizer bars animation */
+@keyframes eqBar1 {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+@keyframes eqBar2 {
+  0%, 100% { height: 14px; }
+  50% { height: 6px; }
+}
+@keyframes eqBar3 {
+  0%, 100% { height: 8px; }
+  50% { height: 18px; }
+}
+@keyframes eqBar4 {
+  0%, 100% { height: 16px; }
+  50% { height: 8px; }
+}
+
+.animate-eq-1 { animation: eqBar1 0.7s ease-in-out infinite; }
+.animate-eq-2 { animation: eqBar2 0.5s ease-in-out infinite; }
+.animate-eq-3 { animation: eqBar3 0.8s ease-in-out infinite; }
+.animate-eq-4 { animation: eqBar4 0.6s ease-in-out infinite; }
+
+/* Shimmer animation */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.shimmer-active {
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmer-active::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.05) 20%,
+    rgba(255, 255, 255, 0.18) 60%,
+    rgba(255, 255, 255, 0)
+  );
+  animation: shimmer 2s infinite;
+  content: '';
+}
+
+/* Cybernetic grid background */
+.cyber-grid {
+  background-size: 36px 36px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+}
